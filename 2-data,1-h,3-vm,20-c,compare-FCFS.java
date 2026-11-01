@@ -1,4 +1,5 @@
-
+//mvn -pl modules/cloudsim-examples/ -am compile -DskipTests
+//mvn exec:java -pl modules/cloudsim-examples/ "-Dexec.mainClass=org.cloudbus.cloudsim.examples.CloudSimMulti"
 package org.cloudbus.cloudsim.examples;
 
 import org.cloudbus.cloudsim.*;
