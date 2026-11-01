@@ -1,0 +1,767 @@
+CLOUD SECURITY LAB - EXPERIMENT 20
+MINIO SERVER-SIDE ENCRYPTION (SSE) USING DOCKER ON macOS
+COMPLETE PROCEDURE FROM THE BEGINNING
+
+============================================================
+1. AIM
+============================================================
+
+To deploy MinIO using Docker on macOS, configure server-side
+encryption for a bucket, upload a sample file, and inspect the
+object metadata to verify that encryption has been applied.
+
+============================================================
+2. SOFTWARE / REQUIREMENTS
+============================================================
+
+1. MacBook / iMac running macOS.
+2. Docker Desktop for Mac.
+3. Terminal.
+4. Internet connection.
+5. MinIO Client (mc).
+6. A working KMS/KES configuration for SSE-S3.
+
+IMPORTANT ABOUT SSE-S3:
+SSE-S3 is not enabled just by starting a normal MinIO Docker
+container. MinIO needs a supported Key Management Service (KMS)
+configuration. This guide starts MinIO using Docker and then
+checks for KMS availability.
+
+For an actual SSE-S3 lab, your instructor/lab administrator must
+provide a supported KMS/KES configuration, or you must deploy the
+KMS component according to the current MinIO documentation.
+Do not invent KMS endpoints, API keys, or key names.
+
+============================================================
+3. THEORY
+============================================================
+
+MinIO is an S3-compatible object storage server.
+
+Server-Side Encryption (SSE) means the server encrypts an object
+before storing it. When an authorized user downloads the object,
+the server decrypts it and returns the original content.
+
+SSE-S3:
+- MinIO encrypts objects using server-side encryption.
+- Encryption keys are managed through a configured KMS.
+- Bucket-default encryption can automatically encrypt new uploads.
+- The object metadata can show the SSE algorithm.
+
+KMS:
+A Key Management Service stores and manages encryption keys.
+A working KMS is required for SSE-S3 in MinIO.
+
+The experiment has these stages:
+1. Install Docker Desktop.
+2. Start Docker.
+3. Download the MinIO Client.
+4. Create a Docker network and persistent storage.
+5. Start MinIO in a Docker container.
+6. Connect mc to MinIO.
+7. Verify KMS availability.
+8. Create a bucket and enable SSE-S3.
+9. Upload a sample file.
+10. Inspect object metadata.
+
+============================================================
+4. INSTALL DOCKER DESKTOP ON macOS
+============================================================
+
+Step 1: Open the official Docker Desktop download page:
+
+    https://www.docker.com/products/docker-desktop/
+
+Step 2: Download Docker Desktop for your Mac processor.
+
+Check your processor:
+
+    uname -m
+
+If the output is:
+
+    arm64
+
+Choose Apple Silicon.
+
+If the output is:
+
+    x86_64
+
+Choose Intel.
+
+Step 3: Open the downloaded .dmg file.
+
+Step 4: Drag Docker.app into the Applications folder.
+
+Step 5: Open Docker Desktop from Applications.
+
+Step 6: Accept the terms and complete the first-time setup.
+
+Step 7: Wait until Docker Desktop shows that the Docker Engine
+        is running.
+
+Step 8: Open Terminal and verify:
+
+    docker --version
+
+Expected output (version may differ):
+
+    Docker version XX.XX.X, build XXXXX
+
+Check Docker Compose:
+
+    docker compose version
+
+Expected output:
+
+    Docker Compose version vX.XX.X
+
+Check that Docker is running:
+
+    docker info
+
+Expected result:
+Docker server information should be displayed. If Docker is not
+running, open Docker Desktop and wait for it to finish starting.
+
+============================================================
+5. INSTALL MINIO CLIENT (mc) ON macOS
+============================================================
+
+The mc client manages MinIO buckets and objects.
+
+If Homebrew is already installed, install mc:
+
+    brew install minio/stable/mc
+
+Verify:
+
+    mc --version
+
+If Homebrew is not installed, install it:
+
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+Follow the installation instructions, then reopen Terminal.
+
+Install mc:
+
+    brew install minio/stable/mc
+
+Verify:
+
+    mc --version
+
+============================================================
+6. CREATE A WORKING DIRECTORY
+============================================================
+
+Create a folder for this experiment:
+
+    mkdir -p ~/minio-sse-lab
+    cd ~/minio-sse-lab
+
+Create a folder for MinIO's persistent data:
+
+    mkdir -p data
+
+Check the current folder:
+
+    pwd
+
+Expected output should end with:
+
+    minio-sse-lab
+
+============================================================
+7. CREATE A DOCKER NETWORK
+============================================================
+
+Create a private Docker network for the MinIO lab:
+
+    docker network create minio-net
+
+Expected output:
+A long network ID.
+
+If Docker says the network already exists, continue.
+
+Check the network:
+
+    docker network ls
+
+The list should contain:
+
+    minio-net
+
+============================================================
+8. START MINIO USING DOCKER
+============================================================
+
+For this lab, use a local MinIO container with persistent data.
+
+Set lab credentials in the current Terminal session. Use your own
+strong password instead of the placeholder:
+
+    export MINIO_ROOT_USER=minioadmin
+    export MINIO_ROOT_PASSWORD='Replace_With_A_Strong_Password'
+
+Start the MinIO container:
+
+    docker run -d \
+      --name minio \
+      --network minio-net \
+      -p 9000:9000 \
+      -p 9001:9001 \
+      -v "$PWD/data:/data" \
+      -e MINIO_ROOT_USER="$MINIO_ROOT_USER" \
+      -e MINIO_ROOT_PASSWORD="$MINIO_ROOT_PASSWORD" \
+      quay.io/minio/minio server /data --console-address ":9001"
+
+Expected output:
+Docker prints a container ID.
+
+Check whether the container is running:
+
+    docker ps
+
+Expected result:
+A container named minio should appear with ports 9000 and 9001.
+
+Check the logs:
+
+    docker logs minio
+
+The logs should show that MinIO has started and is listening on
+port 9000, with the Console on port 9001.
+
+Open the MinIO Console:
+
+    http://127.0.0.1:9001
+
+Log in using:
+Username: minioadmin
+Password: the password you set in MINIO_ROOT_PASSWORD
+
+The MinIO S3 API endpoint is:
+
+    http://127.0.0.1:9000
+
+IMPORTANT:
+The example credentials above are for a local lab only. Do not
+use them in production. Keep the password private.
+
+============================================================
+9. CONNECT mc TO THE DOCKER MINIO SERVER
+============================================================
+
+In Terminal, configure the local alias:
+
+    mc alias set local http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
+
+If the variables are not available in this Terminal session,
+enter your credentials directly:
+
+    mc alias set local http://127.0.0.1:9000 minioadmin 'YOUR_PASSWORD'
+
+Replace YOUR_PASSWORD with the password used when starting
+the container.
+
+Expected output:
+
+    Added `local` successfully.
+
+Check the connection:
+
+    mc admin info local
+
+Expected result:
+MinIO server and storage information should be displayed.
+
+List buckets:
+
+    mc ls local
+
+At this stage, the bucket list may be empty.
+
+============================================================
+10. CHECK KMS SUPPORT / CONFIGURATION
+============================================================
+
+Check the KMS status:
+
+    mc admin kms key status local
+
+IMPORTANT:
+A normal MinIO container started in Section 8 does not automatically
+have a KMS configured. If this command reports that KMS is not
+configured or unavailable, you cannot successfully enable
+SSE-S3 on this container yet.
+
+For SSE-S3, obtain a supported KMS/KES deployment configuration
+from your instructor or follow the current official MinIO KMS
+documentation. The MinIO server must be configured to connect to
+that KMS, with the required endpoint, credentials, and key name.
+
+Do not make up values for:
+- KMS/KES endpoint
+- API key or authentication credentials
+- Encryption key name
+
+After configuring KMS and restarting the MinIO container, run:
+
+    mc admin kms key status local
+
+Continue only when KMS is available.
+
+A plain MinIO Docker container is useful for practicing bucket
+creation and uploads, but it is NOT proof of SSE-S3 encryption.
+
+============================================================
+11. CREATE A BUCKET
+============================================================
+
+After KMS is available, create the bucket:
+
+    mc mb local/secure-bucket
+
+Expected output:
+
+    Bucket created successfully `local/secure-bucket`.
+
+If the bucket already exists, continue.
+
+Check:
+
+    mc ls local
+
+The output should contain:
+
+    secure-bucket/
+
+============================================================
+12. ENABLE SSE-S3 FOR THE BUCKET
+============================================================
+
+Enable bucket-default SSE-S3:
+
+    mc encrypt set sse-s3 local/secure-bucket
+
+Expected result:
+A success message indicating that SSE-S3 bucket encryption
+has been configured.
+
+Verify:
+
+    mc encrypt info local/secure-bucket
+
+Expected output should indicate that automatic SSE-S3 encryption
+is enabled.
+
+IMPORTANT:
+Enable encryption before uploading the sample file. The bucket
+default applies to new uploads; it does not automatically encrypt
+objects that were uploaded earlier.
+
+============================================================
+13. CREATE A SAMPLE FILE ON macOS
+============================================================
+
+Create a text file:
+
+    cat > sample.txt <<'EOF'
+    MINIO SERVER-SIDE ENCRYPTION TEST
+    This is a sample confidential file.
+    The file is uploaded to an SSE-S3 bucket.
+    EOF
+
+Display the file:
+
+    cat sample.txt
+
+Expected output:
+
+    MINIO SERVER-SIDE ENCRYPTION TEST
+    This is a sample confidential file.
+    The file is uploaded to an SSE-S3 bucket.
+
+Check the file:
+
+    ls -lh sample.txt
+
+============================================================
+14. UPLOAD THE FILE TO MINIO
+============================================================
+
+Upload the sample file:
+
+    mc cp sample.txt local/secure-bucket/
+
+Expected result:
+A transfer progress display showing sample.txt was uploaded.
+
+List the bucket:
+
+    mc ls local/secure-bucket/
+
+Expected output should include:
+
+    sample.txt
+
+============================================================
+15. INSPECT OBJECT METADATA
+============================================================
+
+Run:
+
+    mc stat local/secure-bucket/sample.txt
+
+Inspect the output for encryption information similar to:
+
+    Encrypted :
+      X-Amz-Server-Side-Encryption: AES256
+
+The exact display may vary with MinIO and mc versions.
+
+The important verification value is:
+
+    X-Amz-Server-Side-Encryption: AES256
+
+This metadata indicates SSE-S3/AES256 server-side encryption
+for the uploaded object.
+
+============================================================
+16. VERIFY THE COMPLETE EXPERIMENT
+============================================================
+
+Check bucket encryption:
+
+    mc encrypt info local/secure-bucket
+
+Check object metadata:
+
+    mc stat local/secure-bucket/sample.txt
+
+Check the object exists:
+
+    mc ls local/secure-bucket/
+
+Successful verification requires:
+1. Bucket encryption reports SSE-S3 enabled.
+2. The object metadata shows the server-side encryption value.
+3. The uploaded object is present in the bucket.
+
+============================================================
+17. OPTIONAL - DOWNLOAD THE OBJECT
+============================================================
+
+Download the object:
+
+    mc cp local/secure-bucket/sample.txt downloaded-sample.txt
+
+Display it:
+
+    cat downloaded-sample.txt
+
+Expected output:
+
+    MINIO SERVER-SIDE ENCRYPTION TEST
+    This is a sample confidential file.
+    The file is uploaded to an SSE-S3 bucket.
+
+MinIO decrypts the object for an authorized download, so the
+downloaded file contains the original readable text.
+
+============================================================
+18. USEFUL DOCKER COMMANDS
+============================================================
+
+Check running containers:
+
+    docker ps
+
+View MinIO logs:
+
+    docker logs minio
+
+Follow logs continuously:
+
+    docker logs -f minio
+
+Stop MinIO:
+
+    docker stop minio
+
+Start it again:
+
+    docker start minio
+
+Restart it:
+
+    docker restart minio
+
+Remove the container (does not remove the host data folder):
+
+    docker rm -f minio
+
+IMPORTANT:
+The data is stored in the local folder ~/minio-sse-lab/data because
+it is mounted into the container. Do not delete this folder if you
+want to keep the stored objects.
+
+To stop the lab without deleting data:
+
+    docker stop minio
+
+============================================================
+19. TROUBLESHOOTING
+============================================================
+
+PROBLEM 1: Docker command not found
+
+Cause:
+Docker Desktop may not be installed, or its command-line tools
+are not available.
+
+Solution:
+Open Docker Desktop from Applications. Wait until the engine is
+running, then reopen Terminal and run:
+
+    docker --version
+
+------------------------------------------------------------
+
+PROBLEM 2: Cannot connect to the Docker daemon
+
+Cause:
+Docker Desktop is not running.
+
+Solution:
+Open Docker Desktop and wait until it shows that the engine is
+running. Then run:
+
+    docker info
+
+------------------------------------------------------------
+
+PROBLEM 3: Container name already in use
+
+Cause:
+A container named minio already exists.
+
+Solution:
+Check:
+
+    docker ps -a
+
+If it is your old lab container and you want to recreate it:
+
+    docker rm -f minio
+
+Then repeat Section 8. Do not remove a container if it contains
+data you need and you have not checked the persistent data folder.
+
+------------------------------------------------------------
+
+PROBLEM 4: Port already allocated
+
+Cause:
+Another application is using port 9000 or 9001.
+
+Solution:
+Check existing containers:
+
+    docker ps
+
+Stop the conflicting lab container if appropriate. Alternatively,
+use different host ports, for example:
+
+    docker run -d \
+      --name minio \
+      --network minio-net \
+      -p 9010:9000 \
+      -p 9011:9001 \
+      -v "$PWD/data:/data" \
+      -e MINIO_ROOT_USER="$MINIO_ROOT_USER" \
+      -e MINIO_ROOT_PASSWORD="$MINIO_ROOT_PASSWORD" \
+      quay.io/minio/minio server /data --console-address ":9001"
+
+Then use these endpoints:
+
+    Console: http://127.0.0.1:9011
+    API:     http://127.0.0.1:9010
+
+Configure mc using port 9010:
+
+    mc alias set local http://127.0.0.1:9010 USERNAME PASSWORD
+
+------------------------------------------------------------
+
+PROBLEM 5: mc alias or login fails
+
+Cause:
+Wrong endpoint or credentials.
+
+Solution:
+Check the container:
+
+    docker ps
+
+Check logs:
+
+    docker logs minio
+
+Reconfigure the alias with the correct endpoint and credentials:
+
+    mc alias set local http://127.0.0.1:9000 USERNAME PASSWORD
+
+------------------------------------------------------------
+
+PROBLEM 6: KMS is not configured
+
+Cause:
+The container was started without KMS settings.
+
+Solution:
+This is expected for the basic Docker command in Section 8.
+SSE-S3 requires a working supported KMS/KES integration. Obtain
+the lab's KMS configuration and configure MinIO accordingly.
+Do not claim SSE-S3 is enabled until the object metadata verifies it.
+
+------------------------------------------------------------
+
+PROBLEM 7: Encryption command fails
+
+Check:
+
+    mc admin kms key status local
+
+If KMS is unavailable, fix KMS configuration first. Then retry:
+
+    mc encrypt set sse-s3 local/secure-bucket
+
+------------------------------------------------------------
+
+PROBLEM 8: Metadata does not show encryption
+
+Possible causes:
+- The file was uploaded before encryption was enabled.
+- Bucket encryption was not enabled successfully.
+- KMS was unavailable.
+- The object was uploaded to another bucket.
+
+Solution:
+Check:
+
+    mc encrypt info local/secure-bucket
+
+After successful configuration, upload a new object and inspect it:
+
+    mc cp sample.txt local/secure-bucket/
+    mc stat local/secure-bucket/sample.txt
+
+============================================================
+20. OBSERVATION TABLE
+============================================================
+
+S.No.    Operation                         Observation
+-----    -------------------------------   -------------------------
+1        Docker Desktop installed           Docker version displayed
+2        Docker Engine started              docker info successful
+3        MinIO container started            Container running
+4        MinIO Client connected              Alias local successful
+5        KMS checked                         KMS available
+6        Bucket created                      secure-bucket
+7        SSE-S3 enabled                      Bucket encryption enabled
+8        Sample file uploaded                sample.txt uploaded
+9        Object metadata inspected           AES256 metadata found
+
+Fill the observation column with the actual output from your Mac.
+Do not mark KMS or SSE-S3 successful unless the commands confirm it.
+
+============================================================
+21. RESULT
+============================================================
+
+MinIO was deployed using Docker on macOS. After confirming a
+working KMS configuration, SSE-S3 was enabled for the bucket
+secure-bucket. A sample file was uploaded and its metadata was
+inspected using the mc stat command.
+
+The metadata value:
+
+    X-Amz-Server-Side-Encryption: AES256
+
+confirms that server-side encryption was applied to the uploaded
+object. The experiment is successful only when both bucket
+encryption and object metadata are verified.
+
+============================================================
+22. VIVA QUESTIONS
+============================================================
+
+1. What is Docker?
+   Docker is a platform used to package and run applications in
+   isolated containers.
+
+2. What is a Docker container?
+   A container is an isolated runtime environment for an application.
+
+3. What is MinIO?
+   MinIO is an S3-compatible object storage server.
+
+4. What is Server-Side Encryption?
+   Encryption performed by the storage server before data is stored.
+
+5. What is SSE-S3?
+   Server-side encryption using keys managed through a KMS.
+
+6. What is KMS?
+   Key Management Service. It manages encryption keys.
+
+7. What is mc?
+   MinIO Client, used to manage MinIO buckets and objects.
+
+8. Which command creates a bucket?
+   mc mb local/secure-bucket
+
+9. Which command enables SSE-S3?
+   mc encrypt set sse-s3 local/secure-bucket
+
+10. Which command checks bucket encryption?
+    mc encrypt info local/secure-bucket
+
+11. Which command displays object metadata?
+    mc stat local/secure-bucket/sample.txt
+
+12. Which metadata value indicates SSE-S3?
+    X-Amz-Server-Side-Encryption: AES256
+
+13. Does bucket encryption encrypt old objects automatically?
+    No. It applies to new objects uploaded after the setting is enabled.
+
+14. Why is KMS required?
+    KMS manages the encryption keys used by MinIO for SSE-S3.
+
+15. Where is the MinIO data stored in this Docker procedure?
+    In the Mac folder ~/minio-sse-lab/data, mounted into /data
+    inside the MinIO container.
+
+============================================================
+END OF EXPERIMENT 20
+============================================================
+
+OFFICIAL DOCUMENTATION
+
+1. Docker Desktop for Mac:
+   https://docs.docker.com/desktop/setup/install/mac-install/
+
+2. MinIO documentation:
+   https://min.io/docs/
+
+3. MinIO Server-Side Encryption:
+   https://min.io/docs/minio/linux/administration/server-side-encryption.html
+
+4. MinIO Client:
+   https://min.io/docs/minio/linux/reference/minio-mc.html
